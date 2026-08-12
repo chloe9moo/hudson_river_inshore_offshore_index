@@ -7,7 +7,7 @@ library(data.table); library(VAST)
 
 PATH <- getwd()
 
-source(paste0(PATH, "/scripts/inshore_offshore/XX_colors.R"))
+source(file.path(PATH, "scripts", "inshore_offshore", "XX_colors.R"))
 
 ##### SET VARS #####
 spp.l = c("Alewife", "American Shad", "Blueback Herring", "Striped Bass")
@@ -417,86 +417,6 @@ kt.l <- lapply(spp.l, function(s) {
 kt.l <- rbindlist(kt.l)
 fwrite(kt.l, file = paste0(PATH, "/inshore_offshore/", model.run.location, "multi-species_CV_test_results_kruskal_", mod.type, ".csv"))
 
-#comparison of covariate coefficients ----
-library(effects); library(splines)
-
-cov.fig.save.path <- file.path(fig.save.path, "covariate_plots")
-
-for(i in 1:nrow(mod.top)) {
-  ##set vars
-  spp = mod.top[i, species]
-  spp.wd <- paste0(PATH, "/inshore_offshore/", model.run.location, gsub(" ", "_", spp))
-  model.save.location = paste0(spp.wd, "/vast_models")
-  survey = mod.top[i, survey_set]
-  mod.name = mod.top[i, model_name]
-  
-  ##load model and assoc. data
-  vast.mod <- readRDS(file.path(model.save.location, mod.name))
-  
-  ### must add data-frames to global environment (from wiki)
-  covariate_data_full = vast.mod$effects$covariate_data_full
-  catchability_data_full = vast.mod$effects$catchability_data_full
-  
-  ##fix benthic cat factor error
-  if(grepl("factor\\(benth_cat\\)", as.character(vast.mod$X1_formula[2]))) {
-    
-    vast.mod$X1_formula <- update(vast.mod$X1_formula,  ~ . - factor(benth_cat) + benth_cat)
-    vast.mod$X2_formula <- update(vast.mod$X2_formula,  ~ . - factor(benth_cat) + benth_cat)
-    
-  }
-  
-  ##plots
-  for(pred.type in c("X1", "X2", "Q1", "Q2")) {
-    
-    if(grepl("1", pred.type)) { y.axis = "effect on encounter probability" } 
-    if(grepl("2", pred.type)) { y.axis = "effect on positive density" } 
-    
-    if(grepl("X", pred.type)) {
-      covs <- names(covariate_data_full)
-      covs <- covs[covs %in% c("riv_dpth", "benth_cat")]
-    }
-    if(grepl("Q", pred.type)) {
-      covs <- names(catchability_data_full)
-      covs <- covs[covs %in% c("gear", "solar_noon_diff", "sam_dpth")]
-    }
-
-    if(is.null(covs)) { next }
-    
-    for(d in covs) {
-      
-      pred <- Effect.fit_model(vast.mod,
-                               focal.predictors = d,
-                               which_formula = pred.type,
-                               xlevels = 100,
-                               transformation = list(link=identity, inverse=identity))
-      
-      png(paste0(cov.fig.save.path, "/", gsub(" ", "_", spp), "_", survey, "_", d, "_", pred.type, ".png"), 
-          width = 800, height = 800)
-      p <- plot(pred, xlab = d, 
-                main = paste0(spp, ", ", survey, ", ", pred.type, ", ", d),
-                ylab = y.axis)
-      print(p)
-      dev.off()
-      
-    }
-    
-    pred <- Effect.fit_model(vast.mod,
-                             focal.predictors = covs,
-                             which_formula = pred.type,
-                             xlevels = 100,
-                             transformation = list(link=identity, inverse=identity))
-    
-    png(paste0(cov.fig.save.path, "/", gsub(" ", "_", spp), "_", survey, "_interaction_", pred.type, ".png"), 
-        width = 800, height = 800)
-    p <- plot(pred, main = paste0(spp, ", ", survey, ", ", pred.type, ", interaction"), ylab = y.axis)
-    print(p)
-    dev.off()
-    
-  }
-  
-  cat(round(i/nrow(mod.top)*100, 2), "%")
-}
-
 #comparison metrics from Cacciopaglia et al. 2024 ----
 ###### ratio ----
 ratio <- dcast(all.estimates[!type %in% c("CPUE")], formula = species + year ~ type + survey_set, value.var = "estimate")
@@ -516,6 +436,39 @@ ratio.summ <- ratio[, lapply(.SD, mean, na.rm = T), .SDcols = grep("ratio", name
 
 fwrite(ratio, paste0(PATH,  "/inshore_offshore/", model.run.location, "multi-species_index_ratios_raw_", model.run.type, ".csv"))
 fwrite(ratio.summ, paste0(PATH,  "/inshore_offshore/", model.run.location, "multi-species_index_ratios_summ_", model.run.type, ".csv"))
+
+
+##comparing spatial overlap between the surveys ----
+library(sf)
+hr.poly <- read_sf(file.path(PATH, "env_data", "gis_layers", "HudsonRiverKms_Poly.shp"))
+io.dat <- fread(file.path(PATH, "inshore_offshore", "Alewife", "Alewife_vast_prep_dat_all.csv"))
+
+ll.all <- io.dat[, .(long, lat, survey)] |>
+  unique()
+ll.all.sf <- st_as_sf(ll.all, coords = c("long", "lat"), crs = 4326) |>
+  st_transform(st_crs(hr.poly))
+
+ll.all.sf <- st_join(ll.all.sf, hr.poly)
+ll.all.sf <- ll.all.sf[!is.na(ll.all.sf$RKm), ]
+
+ll.fjs <- ll.all.sf[ll.all.sf$survey == "fjs", ]
+ll.bss <- ll.all.sf[ll.all.sf$survey == "bss", ]
+
+all.dist <- st_distance(ll.fjs, ll.bss)
+all.dist <- as.data.table(units::drop_units(all.dist))
+
+setnames(all.dist, names(all.dist), as.character(ll.bss$RKm))
+all.dist$fjs_riv_km <- ll.fjs$RKm
+all.dist <- melt(all.dist, id.vars = "fjs_riv_km", variable.name = "bss_riv_km", value.name = "distance_m")
+
+tmp <- all.dist[fjs_riv_km == bss_riv_km]
+median(tmp$distance_m)
+range(tmp$distance_m)
+
+# ggplot() +
+#   geom_sf(data = hr.poly[hr.poly$RKm == 61, ]) +
+#   geom_sf(data = ll.bss[ll.bss$RKm == 61,]) +
+#   geom_sf(data = ll.fjs[ll.fjs$RKm == 61,], color = "red")
 
 ##comparing old and new results ----
 if(FALSE) {
@@ -552,3 +505,25 @@ if(FALSE) {
   
 }
 
+#full model tabel for supplement ----
+m1 <- fread(paste0(PATH, "/inshore_offshore/multi-species_omsens_results_20250915.csv"))
+setnames(m1, "survey", "survey_set")
+m1[, `:=` (step = "obs model test", catch_cov = "gear_def", dens_cov = 0, knots = 200, save_name = NULL)]
+
+m2 <- fread(paste0(PATH, "/inshore_offshore/", model.run.location, "multi-species_cov_comp_results.csv"))
+m2[, `:=` (step = "cov comparison", i.catch_cov = NULL, i.dens_cov = NULL, model_name = NULL)]
+
+m3 <- fread(paste0(PATH, "/inshore_offshore/", model.run.location, "multi-species_knot_comp_results.csv"))
+m3[, `:=` (step = "knot comparison", model_name = NULL)]
+
+full.mod <- rbindlist(list(m1, m2, m3), fill = T)
+
+full.mod[, `:=` (rrmse = NULL, deviance = NULL, 
+                 survey_set = fcase(survey_set == "all", "inshore+offshore",
+                                    survey_set == "bss", "inshore-only",
+                                    survey_set == "fjs", "offshore-only"),
+                 convergence_check = fifelse(error_message != "", "Convergence issues and/or structural problems", convergence_check))]
+full.mod[, error_message := NULL]
+
+setcolorder(full.mod, c("species", "survey_set", "step", "aic", "rmse", "obs_mod", "catch_cov", "dens_cov", "knots"))
+fwrite(full.mod, file.path(PATH, "inshore_offshore", "multi-species_compiled_all_model_results_all_steps.csv"))

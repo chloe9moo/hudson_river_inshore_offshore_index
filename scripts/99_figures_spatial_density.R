@@ -412,8 +412,8 @@ for(spp in spp.l) {
   p.surv <- ggpubr::ggarrange(p1, p2, p3, nrow = 1, common.legend = T, widths = c(1.2, 1, 1), legend = "right")
   # p.surv
   p.all <- ggpubr::ggarrange(p.surv, p4, nrow = 1, widths = c(0.66, 0.33))
-  # p.all
-  ggsave(paste0(fig.save.path, "predicted_density_all_", spp, ".png"), plot = p.all, width = 12, height = 7, bg = "white")
+  p.all
+  ggsave(paste0(fig.save.path, "predicted_density_all_", spp, ".png"), plot = p.all, width = 11, height = 7, bg = "white")
 }
 
 

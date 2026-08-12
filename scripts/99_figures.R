@@ -336,7 +336,7 @@ p2 <- ggplot(data = io.summ, aes(x = width_bin, y = assigned_riv_km, fill = num_
                      labels = c("0", "", "0.5", "", "1")) +
   scale_fill_viridis_c(trans = "log", breaks = c(1, 10, 100, 1000), limits = c(1, 1000),
                        labels = scales::comma_format(),  # or use label = log10 if you prefer
-                       name = "Total\nhauls\n(log scale)") +
+                       name = "total\nhauls\n(log scale)") +
   facet_wrap(~ survey) +
   labs(x = "relative position along\nwidth of the river", y = "river kilometer") +
   theme(panel.border = element_rect(color = "black", fill = NA),
@@ -373,16 +373,15 @@ hr.center <- hr.center[which(!is.na(hr.center$r_km_label)),]
 p1 <- ggplot() +
   geom_sf(data = hr.poly) +
   ggrepel::geom_text_repel(data = hr.center, aes(x = X, y = Y, label = r_km_label), 
-                           xlim = c(bbox[3]-0.05, bbox[3]+0.1), min.segment.length = 0.1, size = 5.3) +
-  scale_x_continuous(breaks = xbreaks, limits = c(bbox[1], bbox[3]+0.1)) +
+                           xlim = c(bbox[3]-0.05, bbox[3]+0.01), min.segment.length = 0.1, size = 5.3) +
+  scale_x_continuous(breaks = xbreaks, limits = c(bbox[1], bbox[3]+0.15)) +
   scale_y_continuous(expand = c(0,0)) +
   labs(x = "", y = "", title = " ") +
   # coord_sf(xlim = c(xmin, xmax), expand = FALSE) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
         axis.text = element_text(size = 16, color = "black"),
-        panel.border = element_rect(color = "#d62828", fill = NA, linewidth = 1.5),
-        plot.margin = margin(0, 0, 0, 0, "cm"))
+        panel.border = element_rect(color = "#d62828", fill = NA, linewidth = 1.5))
 
 plower <- ggpubr::ggarrange(p1, p2, nrow = 1, labels = c("B", "C"), font.label = list(size = 21), widths = c(0.7, 1), heights = c(1.2, 1))
 plower
@@ -423,8 +422,16 @@ p3 <- ggplot() +
 ggsave(paste0(fig.save.path, "/study_extent_state_inset.png"), plot = p3, width = 5, height = 5)
 
 ##all combined ----
-p.se <- ggpubr::ggarrange(p3, p1, p2, nrow = 1, labels = "AUTO", font.label = list(size = 21))
-ggsave(paste0(fig.save.path, "/study_extent_full_plot.png"), plot = p.se, width = 14.5, height = 9, bg = "white")
+p1.1 <- p1 + 
+  theme(plot.margin = margin(0, 0, 0, 0),
+        axis.text.y = element_text(margin = margin(0)))
+p2.1 <- p2 + theme(plot.margin = margin(2, 5, 2, 0),
+                   axis.text.y = element_text(margin = margin(0)))
+p3.1 <- p3 + theme(plot.margin = margin(2, 0, 2, 2))
+
+p.se <- ggpubr::ggarrange(p3.1, p1.1, p2.1, nrow = 1, labels = "AUTO", font.label = list(size = 21), align = "none")
+# p.se
+ggsave(paste0(fig.save.path, "/study_extent_full_plot.png"), plot = p.se, width = 14.5, height = 8, bg = "white")
 
  } #end section
 
@@ -455,7 +462,7 @@ io.tmp[, .(mn_hauls_per_survey_section = mean(ttl_hauls)), by = c("survey", "in_
 if(fig_0) {
   
 spp.summ.all <- fread(paste0(PATH, "/inshore_offshore/multi-species_summarized_cpue.csv"))
-spp.summ.all[, mn_cpue := mn_cpue * 1000]
+# spp.summ.all[, mn_cpue := mn_cpue * 1000]
 spp.summ.all[survey == "fjs", survey := "offshore"]
 spp.summ.all[survey == "bss", survey := "inshore"]
 spp.summ.wide <- dcast(data = spp.summ.all, common_name + year ~ survey, value.var = "mn_cpue")
@@ -464,7 +471,8 @@ options(scipen = 999)
 p1 <- ggplot(data = spp.summ.all, aes(x = year, y = mn_cpue, fill = survey, color = survey)) +
   geom_line(show.legend = FALSE) +
   geom_point(size = 3, shape = 21, color = "black") +
-  scale_y_continuous(transform = "log10", n.breaks = 6, name = bquote(mean~annual~CPUE~"*"~10^~3~(catch~"/"~m^2))) +
+  # scale_y_continuous(transform = "log10", n.breaks = 6, name = bquote(mean~annual~CPUE~"*"~10^~3~(catch~"/"~m^2))) +
+  scale_y_continuous(transform = "log10", n.breaks = 6, name = bquote(mean~annual~CPUE~(catch~"/"~m^2)~(axis~shown~on~log[10]~scale))) +
   facet_wrap(~ common_name, scales = "free_y", ncol = 1) +
   scale_fill_manual(values = survey.pal) +
   scale_color_manual(values = survey.pal) +
@@ -479,26 +487,35 @@ p1 <- ggplot(data = spp.summ.all, aes(x = year, y = mn_cpue, fill = survey, colo
         legend.key.size = unit(1, 'cm'),
         legend.position = "bottom")
 
+
+corr.res <- fread(file.path(PATH, "inshore_offshore", "multi-species_spearman_corr_mean_cpue.csv"))
+corr.res[, `:=` (common_name = species, trimmed_rho = paste("rho =", round(rho, digits = 3)))]
+corr.res <- spp.summ.wide[corr.res, on = "common_name"]
+corr.res <- corr.res[, .(x = max(inshore), y = min(offshore)), by = c("common_name", "trimmed_rho")]
+
 p2 <- ggplot(data = spp.summ.wide, aes(x = inshore, y = offshore)) +
   geom_smooth(method = "lm", formula = y ~ x, color = "black") +
   geom_point(fill = "#00798c", alpha = 0.8, shape = 21, size = 3, color = "black") +
   # scale_fill_viridis_c(breaks = seq(1980, 2015, 10), labels = c("'80", "'90", "'00", "'10")) +
   facet_wrap(~ common_name, scales = "free", ncol = 1) +
-  scale_x_continuous(transform = "log10", n.breaks = 6, name = bquote(inshore~CPUE~"*"~10^~3)) +
-  scale_y_continuous(transform = "log10", n.breaks = 6, name = bquote(offshore~CPUE~"*"~10^~3)) +
+  geom_text(data = corr.res, aes(x = x, y = y, label = trimmed_rho), size = 5, hjust = 0.8, vjust = 0.1, inherit.aes = FALSE) +
+  scale_x_log10(labels = scales::label_number(trim = TRUE), name = bquote(atop(inshore~CPUE, (log[10]~scale)))) +
+  scale_y_log10(labels = scales::label_number(trim = TRUE), n.breaks = 5, name = bquote(atop(offshore~CPUE, (axis~shown~on~log[10]~scale)))) +
+  # scale_x_continuous(transform = "log10", n.breaks = 6, name = bquote(atop(inshore~CPUE, (log[10]~scale))), labels = scales::label_scientific()) +
+  # scale_y_continuous(transform = "log10", n.breaks = 4, name = bquote(atop(offshore~CPUE, (axis~shown~on~log[10]~scale)))) +
   io_theme +
   theme(axis.title.x = element_text(margin = margin(t = 5)),
-        axis.title.y = element_text(margin = margin(r = 5)),
+        axis.title.y = element_text(margin = margin(r = 5, l = 0),
+                                    lineheight = 0),
         axis.title = element_text(size = 14),
         legend.title = element_text(size = 14, vjust = 0.9, hjust = 1),
         axis.text.x = element_text(angle = 0, hjust = 0.5),
         legend.position = "none")
 
-p3 <- ggpubr::ggarrange(p1, p2, nrow = 1, common.legend = T, widths = c(1, 0.6), align = "v", labels = c("A", "B"), legend = "bottom")
+p3 <- ggpubr::ggarrange(p1, p2, nrow = 1, common.legend = T, widths = c(1, 0.7), align = "h", labels = c("A", "B"), legend = "bottom")
+# p3
 
-p3
-
-ggsave(paste0(fig.save.path, "/raw_cpue_survey_comparison_combined.png"), plot = p3, width = 9, height = 9, bg = "white")
+ggsave(paste0(fig.save.path, "/raw_cpue_survey_comparison_combined.png"), plot = p3, width = 10, height = 9, bg = "white")
 # ggsave(paste0(fig.save.path, "/raw_cpue_survey_comparison_timeseries.png"), plot = p1, width = 10, height = 6)
 # ggsave(paste0(fig.save.path, "/raw_cpue_survey_comparison_1v1.png"), plot = p2, width = 10, height = 6)
 
@@ -549,8 +566,8 @@ if(fig_1) {
     geom_smooth(method = "lm", formula = y~x, show.legend = F) +
     scale_fill_manual(values = survey.pal, name = "survey used") +
     scale_color_manual(values = survey.pal, name = "survey used") +
-    scale_x_continuous(transform = "log10", name = expression(paste(bold("observed"), " mean annual density"))) +
-    scale_y_continuous(transform = "log10", name = expression(paste(bold("predicted"), " mean annual density"))) +
+    scale_x_continuous(transform = "log10", name = expression(paste(bold("observed"), " mean annual density (axis shown on"~log[10]~"scale)"))) +
+    scale_y_continuous(transform = "log10", name = expression(paste(bold("predicted"), " mean annual density (axis shown on"~log[10]~"scale)"))) +
     facet_wrap(~ species, scales = "free") +
     guides(color = guide_legend(override.aes = list(alpha = 1, size = 5))) +
     io_theme +
@@ -726,9 +743,8 @@ if(fig_2) {
   
   p4 <- ggplot(data = ai.c.f.b, aes(x = `inshore+offshore`, y = value, fill = variable)) +
     ai_1v1_theme +
-    scale_x_continuous(transform = "log1p") +
-    scale_y_continuous(transform = "log1p") +
-    labs(x = "inshore + offshore\nnormalized index", y = "single survey normalized index")
+    scale_x_continuous(transform = "log1p", name = "inshore + offshore\nnormalized index\n(axis shown on log+1 scale)") +
+    scale_y_continuous(transform = "log1p", name = "single survey normalized index (axis shown on log+1 scale)") 
   # p4
   # ggsave(paste0(fig.save.path, "/abundance_index_survey_comp_combined_v_inshore-offshore_", mod.type, ".png"), width = 8, height = 6)
 
@@ -856,7 +872,7 @@ if(fig_4) {
     scale_fill_manual(values = survey.pal, name = "index type") +
     # scale_color_manual(values = survey.pal) +
     scale_y_continuous(transform = "log10", n.breaks = 10, 
-                       name = bquote(annual~CV~(SE~"/"~abundance~estimate))) +
+                       name = bquote(atop(annual~CV~(SE~"/"~abundance~estimate), (axis~shown~on~log[10]~scale)))) +
     theme(axis.text.x = element_blank(),
           axis.ticks.x = element_blank(),
           legend.position = "bottom",
@@ -1074,61 +1090,340 @@ if(pred_splines_check) {
     }
     
   }
+}
+
+#looking at splines ----
+# library(splines)
+# 
+# set.seed(123)
+# x <- io.dat.spp.all$riv_dpth
+# 
+# # Simulate y: bell/hill shape with curved tails
+# y <- io.dat.spp.all$ct_yoy
+# 
+# data <- data.frame(x = x, y = y)
+# x_seq <- seq(min(x), max(x), length.out = 200)
+# 
+# # Fit spline models
+# model_ns <- lm(y ~ ns(log(x+1), df = 5), data = data)
+# model_bs <- lm(y ~ bs(log(x+1), df = 5), data = data)
+# 
+# # Plot
+# plot(x, y, main = "Comparison of bs() vs ns()", xlab = "x", ylab = "y", pch = 16, col = "gray")
+# lines(x_seq, predict(model_ns, newdata = data.frame(x = x_seq)), col = "blue", lwd = 2)
+# lines(x_seq, predict(model_bs, newdata = data.frame(x = x_seq)), col = "red", lwd = 2)
+# legend("topright", legend = c("ns() (Natural Spline)", "bs() (B-spline)"),
+#        col = c("blue", "red"), lty = 1, lwd = 2)
+# 
+# plot(resid(model_bs), main = "Residuals")
+# 
+# plot(fitted(model_ns), resid(model_ns), xlab = "Fitted", ylab = "Residuals")
+# abline(h = 0, col = "red")
+# 
+# plot(density(resid(model_ns)))
+# hist(resid(model_ns), breaks = 20)
+# 
+# # Fit a spline model
+# fit <- lm(ct_yoy ~ bs(solar_noon_diff, df = 4), data = io.dat.spp[ct_yoy > 0])
+# summary(fit)
+# # Make a sequence of x values over the observed range
+# newdat <- data.frame(solar_noon_diff = seq(
+#   min(io.dat.spp$solar_noon_diff, na.rm = TRUE),
+#   max(io.dat.spp$solar_noon_diff, na.rm = TRUE),
+#   length.out = 200
+# ))
+# 
+# # Get predictions
+# pred <- predict(fit, newdata = newdat, interval = "confidence")
+# newdat$pred <- pred[, "fit"]
+# newdat$lwr <- pred[, "lwr"]
+# newdat$upr <- pred[, "upr"]
+# 
+# # Plot data + fitted smooth
+# ggplot() +
+#   geom_point(data = io.dat.spp[ct_yoy > 0], aes(x = solar_noon_diff, y = ct_yoy), pch = 16, color = "grey") +
+#   geom_line(data = newdat, aes(x = solar_noon_diff, y = pred), color = "blue") +
+#   geom_ribbon(data = newdat, aes(ymin = lwr, ymax = upr, x = solar_noon_diff), alpha = 0.2, fill = "blue") +
+#   scale_y_continuous(transform = "log10")
+# 
+# }
   
-  #looking at splines ----
-  # library(splines)
-  # 
-  # set.seed(123)
-  # x <- io.dat.spp.all$riv_dpth
-  # 
-  # # Simulate y: bell/hill shape with curved tails
-  # y <- io.dat.spp.all$ct_yoy
-  # 
-  # data <- data.frame(x = x, y = y)
-  # x_seq <- seq(min(x), max(x), length.out = 200)
-  # 
-  # # Fit spline models
-  # model_ns <- lm(y ~ ns(log(x+1), df = 5), data = data)
-  # model_bs <- lm(y ~ bs(log(x+1), df = 5), data = data)
-  # 
-  # # Plot
-  # plot(x, y, main = "Comparison of bs() vs ns()", xlab = "x", ylab = "y", pch = 16, col = "gray")
-  # lines(x_seq, predict(model_ns, newdata = data.frame(x = x_seq)), col = "blue", lwd = 2)
-  # lines(x_seq, predict(model_bs, newdata = data.frame(x = x_seq)), col = "red", lwd = 2)
-  # legend("topright", legend = c("ns() (Natural Spline)", "bs() (B-spline)"),
-  #        col = c("blue", "red"), lty = 1, lwd = 2)
-  # 
-  # plot(resid(model_bs), main = "Residuals")
-  # 
-  # plot(fitted(model_ns), resid(model_ns), xlab = "Fitted", ylab = "Residuals")
-  # abline(h = 0, col = "red")
+#spatial residuals for supplement ------
+if(FALSE) {
+  #directory of 'top' selected models
+  mod.top <- fread(paste0(PATH, "/inshore_offshore/", model.run.location, "multi-species_", gsub(" ", "_", model.run.type), "_results_filtered.csv"))
   
-  plot(density(resid(model_ns)))
-  hist(resid(model_ns), breaks = 20)
+  for(spp in spp.l) {
+    spp.wd <- paste0(PATH, "/inshore_offshore/", model.run.location, gsub(" ", "_", spp))
+    model.save.location = paste0(spp.wd, "/vast_models")
+    
+    mod.name <- mod.top[species == spp, model_name]
+    
+    for(i in 1:length(mod.name)) {
+      vast.mod <- readRDS(paste(model.save.location, mod.name[i], sep = "/"))
+      df <- vast.mod$data_frame
+      df$D_i <- vast.mod$Report$D_i
+      df$obs_D <- units::drop_units(df$b_i / df$a_i)
+      df$spatial_res <- df$obs_D - df$D_i
+      df$viz_adjust_spatial_res <- df$spatial_res / max(abs(df$spatial_res))
+      
+      for(surv in c("fjs", "bss", "all")) {
+        if(grepl(surv, mod.name[i])) { 
+          if(surv == "all") { 
+            survey_name <- "inshore + offshore"
+          } 
+          if(surv == "bss") {
+            survey_name <- "inshore"
+          }
+          if(surv == "fjs") {
+            survey_name <- "offshore"
+          }
+        }
+      }
+      
+      p <- ggplot(data = df, aes(x = Lon_i, y = Lat_i, color = viz_adjust_spatial_res)) +
+        geom_point(size = 0.6) +
+        scale_color_gradient2(high = "blue",  mid = "white", low = "red", midpoint = 0, 
+                              limits = c(-1, 1), breaks = seq(-1, 1, by = 0.5),
+                              name = "spatial residuals") +
+        facet_wrap(~ t_i, ncol = 5) +
+        labs(x = "longitude", y = "latitude") +
+        ggtitle(paste0(spp, ": ", survey_name)) +
+        theme_bw() +
+        theme(panel.background = element_rect(fill = "lightgray"),
+              legend.position = "bottom",
+              axis.text.x = element_text(angle = 45, hjust = 1))
+      
+      ggsave(paste0(fig.save.path, "/supplemental_fig_spatial_res_", gsub(".rds", "", mod.name[i]), ".png"), plot = p, width = 7, height = 8)
+    }
+  }
+} 
   
-  # Fit a spline model
-  fit <- lm(ct_yoy ~ bs(solar_noon_diff, df = 4), data = io.dat.spp[ct_yoy > 0])
-  summary(fit)
-  # Make a sequence of x values over the observed range
-  newdat <- data.frame(solar_noon_diff = seq(
-    min(io.dat.spp$solar_noon_diff, na.rm = TRUE),
-    max(io.dat.spp$solar_noon_diff, na.rm = TRUE),
-    length.out = 200
-  ))
+#knot plots for supplement ----
+if(FALSE) {
+  #directory of 'top' selected models
+  mod.top <- fread(paste0(PATH, "/inshore_offshore/", model.run.location, "multi-species_", gsub(" ", "_", model.run.type), "_results_filtered.csv"))
   
-  # Get predictions
-  pred <- predict(fit, newdata = newdat, interval = "confidence")
-  newdat$pred <- pred[, "fit"]
-  newdat$lwr <- pred[, "lwr"]
-  newdat$upr <- pred[, "upr"]
+  for(spp in spp.l) {
+    spp.wd <- paste0(PATH, "/inshore_offshore/", model.run.location, gsub(" ", "_", spp))
+    model.save.location = paste0(spp.wd, "/vast_models")
+    
+    mod.name.full <- mod.top[species == spp, model_name]
+    
+    knots.full <- lapply(mod.name.full, function(mod.name) {
+      
+      vast.mod <- readRDS(paste(model.save.location, mod.name, sep = "/"))
+      knots.ll <- as.data.table(vast.mod$spatial_list$latlon_g)
+      
+      for(surv in c("fjs", "bss", "all")) {
+        if(grepl(surv, mod.name)) { 
+          if(surv == "all") { 
+            knots.ll$survey_name <- "inshore + offshore"
+          } 
+          if(surv == "bss") {
+            knots.ll$survey_name <- "inshore"
+          }
+          if(surv == "fjs") {
+            knots.ll$survey_name <- "offshore"
+          }
+        }
+      }
+      
+      knots.ll$num_knots <- nrow(knots.ll)
+      return(knots.ll)
+    })
+    
+    knots.full <- rbindlist(knots.full)
+    knots.full[, cat_name := paste0(survey_name, ": ", num_knots, " knots")]
+    
+    p <- ggplot(data = knots.full, aes(x = Lon, y = Lat, )) +
+      geom_point(size = 0.5) +
+      labs(x = "longitude", y = "latitude") +
+      facet_wrap(~ cat_name) +
+      ggtitle(spp) +
+      theme_bw() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    
+    ggsave(paste0(fig.save.path, "/supplemental_fig_knotloc_", spp, ".png"), plot = p, width = 7, height = 3)
+  }
+}
+
+#comparison of covariate coefficients ----
+if(FALSE) {
   
-  # Plot data + fitted smooth
-  ggplot() +
-    geom_point(data = io.dat.spp[ct_yoy > 0], aes(x = solar_noon_diff, y = ct_yoy), pch = 16, color = "grey") +
-    geom_line(data = newdat, aes(x = solar_noon_diff, y = pred), color = "blue") +
-    geom_ribbon(data = newdat, aes(ymin = lwr, ymax = upr, x = solar_noon_diff), alpha = 0.2, fill = "blue") +
-    scale_y_continuous(transform = "log10")
+  library(effects); library(splines)
+  
+  cov.fig.save.path <- file.path(fig.save.path, "covariate_plots")
+  mod.top <- fread(paste0(PATH, "/inshore_offshore/", model.run.location, "multi-species_", gsub(" ", "_", model.run.type), "_results_filtered.csv"))
+  
+  all.cov.df <- data.table()
+  
+  for(i in 1:nrow(mod.top)) {
+    ##set vars
+    spp = mod.top[i, species]
+    spp.wd <- paste0(PATH, "/inshore_offshore/", model.run.location, gsub(" ", "_", spp))
+    model.save.location = paste0(spp.wd, "/vast_models")
+    survey = mod.top[i, survey_set]
+    mod.name = mod.top[i, model_name]
+    
+    ##load model and assoc. data
+    vast.mod <- readRDS(file.path(model.save.location, mod.name))
+    
+    ### must add data-frames to global environment (from wiki)
+    covariate_data_full = vast.mod$effects$covariate_data_full
+    catchability_data_full = vast.mod$effects$catchability_data_full
+    
+    ##fix benthic cat factor error
+    if(grepl("factor\\(benth_cat\\)", as.character(vast.mod$X1_formula[2]))) {
+      
+      vast.mod$X1_formula <- update(vast.mod$X1_formula,  ~ . - factor(benth_cat) + benth_cat)
+      vast.mod$X2_formula <- update(vast.mod$X2_formula,  ~ . - factor(benth_cat) + benth_cat)
+      
+    }
+    
+    ##plots
+    for(pred.type in c("X1", "X2", "Q1", "Q2")) {
+      
+      if(grepl("1", pred.type)) { y.axis = "effect on encounter probability" } 
+      if(grepl("2", pred.type)) { y.axis = "effect on positive density" } 
+      
+      if(grepl("X", pred.type)) {
+        covs <- names(covariate_data_full)
+        covs <- covs[covs %in% c("riv_dpth", "benth_cat")]
+      }
+      if(grepl("Q", pred.type)) {
+        covs <- names(catchability_data_full)
+        covs <- covs[covs %in% c("gear_def", "solar_noon_diff", "sam_dpth")]
+      }
+      
+      if(is.null(covs)) { next }
+      
+      for(d in covs) {
+        
+        pred <- Effect.fit_model(vast.mod,
+                                 focal.predictors = d,
+                                 which_formula = pred.type,
+                                 xlevels = 100,
+                                 transformation = list(link=identity, inverse=identity))
+        
+        # png(paste0(cov.fig.save.path, "/", gsub(" ", "_", spp), "_", survey, "_", d, "_", pred.type, ".png"), 
+        #     width = 800, height = 800)
+        # p <- plot(pred, xlab = d, 
+        #           main = paste0(spp, ", ", survey, ", ", pred.type, ", ", d),
+        #           ylab = y.axis)
+        # print(p)
+        # dev.off()
+        
+        eff.df <- data.table(
+          species = spp,
+          model = survey,
+          lp = pred.type,
+          covariate = d,
+          x = as.character(pred$x[[d]]),
+          fit = as.vector(pred$fit),
+          lower = as.vector(pred$lower),
+          upper = as.vector(pred$upper)
+        )
+        
+        all.cov.df <- rbindlist(list(all.cov.df, eff.df))
+      }
+      
+      # pred <- Effect.fit_model(vast.mod,
+      #                          focal.predictors = covs,
+      #                          which_formula = pred.type,
+      #                          xlevels = 100,
+      #                          transformation = list(link=identity, inverse=identity))
+      # 
+      # png(paste0(cov.fig.save.path, "/", gsub(" ", "_", spp), "_", survey, "_interaction_", pred.type, ".png"), 
+      #     width = 800, height = 800)
+      # p <- plot(pred, main = paste0(spp, ", ", survey, ", ", pred.type, ", interaction"), ylab = y.axis)
+      # print(p)
+      # dev.off()
+      
+    }
+    
+    cat(round(i/nrow(mod.top)*100, 2), "%")
+  }
+  
+  #plots
+  library(dplyr)
+  all.cov.df[, model := fcase(model == "all", "inshore+offshore",
+                              model == "bss", "inshore",
+                              model == "fjs", "offshore")]
+  
+  for(cov in c("riv_dpth", "sam_dpth", "solar_noon_diff")) {
+    for(pred.type in c("X1", "X2", "Q1", "Q2")) {
+      
+      cov.smooth <- data.frame()
+      for(spp in spp.l){
+        for(survey in c("inshore+offshore", "inshore", "offshore")) {
+          tmp <- all.cov.df[covariate == cov & lp == pred.type &
+                              species == spp & model == survey][, x := as.numeric(x)]
+          
+          if(nrow(tmp) == 0) { next }
+          
+          tmp_smooth <- tmp %>%
+            group_by(species, model) %>%
+            group_modify(~ {
+              x_new <- seq(min(.x$x), max(.x$x), length.out = 200)
+              
+              data.frame(x = x_new,
+                         fit = spline(.x$x, .x$fit, xout = x_new, method = "natural")$y,
+                         lower = spline(.x$x, .x$lower, xout = x_new, method = "natural")$y,
+                         upper = spline(.x$x, .x$upper, xout = x_new, method = "natural")$y
+              )
+            })
+          
+          cov.smooth <- bind_rows(cov.smooth, tmp_smooth)
+        }
+      }
+      
+      if(nrow(cov.smooth) == 0) { next }
+      
+      if(grepl("1", pred.type)) { y_title = "effect on encounter probability" }
+      if(grepl("2", pred.type)) { y_title = "effect on positive density" }
+      
+      p <- ggplot(cov.smooth, aes(x = x, y = fit)) +
+        geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2) +
+        geom_line(linewidth = 0.8) +
+        facet_wrap(species ~ model,scales = "free", ncol = 3, drop = FALSE) +
+        scale_y_continuous(n.breaks = 3) +
+        labs(x = cov, y = y_title) +
+        theme_bw(base_size = 12) +
+        theme(axis.text = element_text(color = "black"))
+      ggsave(paste0(cov.fig.save.path, "/combined_plot_", cov, "_", pred.type, ".png"), plot = p, width = 6, height = 6)
+      
+    }
+  }
+  
+  for(cov in c("gear_def", "benth_cat")) {
+    for(pred.type in c("X1", "X2", "Q1", "Q2")) {
+      
+      tmp <- all.cov.df[covariate == cov & lp == pred.type]
+      
+      if(nrow(tmp) == 0) { next }
+      
+      if(grepl("1", pred.type)) { y_title = "effect on encounter probability" }
+      if(grepl("2", pred.type)) { y_title = "effect on positive density" }
+      
+      p <- ggplot(tmp, aes(y = x, x = fit)) +
+        geom_pointrange(aes(xmin = lower, xmax = upper)) +
+        facet_wrap(species ~ model,scales = "free", ncol = 3, drop = FALSE) +
+        scale_x_continuous(n.breaks = 3) +
+        labs(y = cov, x = y_title) +
+        theme_bw(base_size = 12) +
+        theme(axis.text = element_text(color = "black"))
+      ggsave(paste0(cov.fig.save.path, "/combined_plot_", cov, "_", pred.type, ".png"), plot = p, width = 10, height = 8)
+      
+    }
+  }
   
 }
+
+
+
+
+
+
 
 
